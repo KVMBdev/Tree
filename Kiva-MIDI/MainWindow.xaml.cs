@@ -607,6 +607,7 @@ namespace Kiva
                                     int actualWidth, actualHeight;
                                     pixels = d3d.ToRawFrame(out actualWidth, out actualHeight);
                                     CompositeVideoFrame(pixels);
+                                    CompositeVideoInfoCard(pixels, actualWidth, actualHeight, frameTime, frameRate);
                                     if (actualWidth != width || actualHeight != height)
                                         throw new InvalidOperationException("The visualization size changed during video rendering.");
                                 })).Task;
@@ -664,6 +665,68 @@ namespace Kiva
                 pixels[i + 1] = (byte)Math.Min(255, pixels[i + 1] + backgroundGreen * inverseAlpha / 255);
                 pixels[i + 2] = (byte)Math.Min(255, pixels[i + 2] + backgroundRed * inverseAlpha / 255);
                 pixels[i + 3] = 255;
+            }
+        }
+
+
+
+        private void CompositeVideoInfoCard(byte[] pixels, int frameWidth, int frameHeight, double frameTime, int frameRate)
+        {
+            if (settings.General.HideInfoCard || infoCard.Visibility != Visibility.Visible || infoCard.ActualWidth <= 0 || infoCard.ActualHeight <= 0)
+                return;
+
+            Func<double, string> formatTime = seconds =>
+            {
+                var time = TimeSpan.FromSeconds(Math.Max(0, seconds));
+                return time.Minutes + ":" + (time.Seconds > 9 ? time.Seconds.ToString() : "0" + time.Seconds) + "." + (time.Milliseconds - time.Milliseconds % 100) / 100;
+            };
+
+            timeLabel.Text = formatTime(frameTime) + " / " + formatTime(loadedFle.MidiLength);
+            fpsLabel.Text = frameRate.ToString(CultureInfo.InvariantCulture);
+            fakeFpsLabel.Text = frameRate.ToString(CultureInfo.InvariantCulture);
+            ncLabel.Text = loadedFle.MidiNoteCount.ToString("#,##0");
+            npLabel.Text = scene.NotesPassedSum.ToString("#,##0");
+            renderedNotesLabel.Text = scene.LastRenderedNoteCount.ToString("#,##0");
+            npsLabelLabel.Text = scene.LastNPS.ToString("#,##0");
+            polyphonyLabel.Text = scene.LastPolyphony.ToString("#,##0");
+            bufferLenLabel.Text = selectedAudioEngine == AudioEngine.PreRender
+                ? formatTime(preRenderPlayer.BufferSeconds)
+                : "N/A";
+            rotateLogo.Angle = frameTime * 4;
+            infoCard.UpdateLayout();
+
+            double scaleX = 1;
+            double scaleY = 1;
+            var source = PresentationSource.FromVisual(this);
+            if (source != null)
+            {
+                scaleX = source.CompositionTarget.TransformToDevice.M11;
+                scaleY = source.CompositionTarget.TransformToDevice.M22;
+            }
+            int overlayWidth = Math.Min(frameWidth, (int)Math.Ceiling(infoCard.ActualWidth * scaleX));
+            int overlayHeight = Math.Min(frameHeight, (int)Math.Ceiling(infoCard.ActualHeight * scaleY));
+            if (overlayWidth <= 0 || overlayHeight <= 0)
+                return;
+
+            var overlay = new RenderTargetBitmap(overlayWidth, overlayHeight, 96 * scaleX, 96 * scaleY, PixelFormats.Pbgra32);
+            overlay.Render(infoCard);
+            int stride = overlayWidth * 4;
+            var overlayPixels = new byte[stride * overlayHeight];
+            overlay.CopyPixels(overlayPixels, stride, 0);
+
+            for (int y = 0; y < overlayHeight; y++)
+            {
+                int videoRow = y * frameWidth * 4;
+                int overlayRow = y * stride;
+                for (int x = 0; x < overlayWidth; x++)
+                {
+                    int videoIndex = videoRow + x * 4;
+                    int overlayIndex = overlayRow + x * 4;
+                    int inverseAlpha = 255 - overlayPixels[overlayIndex + 3];
+                    pixels[videoIndex] = (byte)Math.Min(255, overlayPixels[overlayIndex] + pixels[videoIndex] * inverseAlpha / 255);
+                    pixels[videoIndex + 1] = (byte)Math.Min(255, overlayPixels[overlayIndex + 1] + pixels[videoIndex + 1] * inverseAlpha / 255);
+                    pixels[videoIndex + 2] = (byte)Math.Min(255, overlayPixels[overlayIndex + 2] + pixels[videoIndex + 2] * inverseAlpha / 255);
+                }
             }
         }
 
