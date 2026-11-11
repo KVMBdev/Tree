@@ -1,0 +1,75 @@
+<Window x:Class="Kiva.RenderToVideoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Render to Video" Height="390" Width="720"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#1E1E1E" Foreground="White">
+    <Window.Resources>
+        <Style TargetType="{x:Type Label}">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0,0,10,0"/>
+        </Style>
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#303030"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Padding" Value="5,2"/>
+        </Style>
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="12,3"/>
+            <Setter Property="Background" Value="#237A4B"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Render to Video" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,10"/>
+        <Grid Grid.Row="1" Margin="0,4">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+            <Label Content="MIDI file"/>
+            <TextBox x:Name="midiPathText" Grid.Column="1"/>
+            <Button Grid.Column="2" Content="Browse..." Click="BrowseMidi_Click" Margin="8,0,0,0"/>
+        </Grid>
+        <Grid Grid.Row="2" Margin="0,4">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+            <Label Content="FFmpeg"/>
+            <TextBox x:Name="ffmpegPathText" Grid.Column="1"/>
+            <Button Grid.Column="2" Content="Browse..." Click="BrowseFfmpeg_Click" Margin="8,0,0,0"/>
+        </Grid>
+        <Grid Grid.Row="3" Margin="0,4">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+            <Label Content="Audio"/>
+            <TextBox x:Name="audioPathText" Grid.Column="1"/>
+            <Button Grid.Column="2" Content="Browse..." Click="BrowseAudio_Click" Margin="8,0,0,0"/>
+        </Grid>
+        <TextBlock Grid.Row="4" Text="Choose audio rendered from this MIDI in KMC or OmniConverter (WAV, OGG, FLAC, MP3 and other FFmpeg formats)." Foreground="#BBBBBB" TextWrapping="Wrap" Margin="95,2,0,0"/>
+        <Grid Grid.Row="5" Margin="0,10,0,4" VerticalAlignment="Top">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="95"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+            <Label Content="Save video"/>
+            <TextBox x:Name="outputPathText" Grid.Column="1"/>
+            <Button Grid.Column="2" Content="Browse..." Click="BrowseOutput_Click" Margin="8,0,0,0"/>
+        </Grid>
+        <ProgressBar x:Name="renderProgress" Grid.Row="6" Height="12" Minimum="0" Maximum="100" Margin="0,10,0,5"/>
+        <DockPanel Grid.Row="7" Margin="0,8,0,0">
+            <TextBlock x:Name="statusText" Text="Select the files needed to render." Foreground="#BBBBBB" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button x:Name="renderButton" Content="Render to Video" Click="Render_Click" MinWidth="145" Margin="5,0,0,0"/>
+                <Button x:Name="closeButton" Content="Close" Click="Close_Click" MinWidth="75" Margin="8,0,0,0"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

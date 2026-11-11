@@ -49,6 +49,9 @@
                         <Button Name="playButton" PreviewMouseDown="PlayButton_Click" WindowChrome.IsHitTestVisibleInChrome="True" Width="{Binding ActualHeight, RelativeSource={RelativeSource Self}}" Style="{StaticResource TransparentButtonStyle}" Padding="0" Margin="0,0,0,0">
                             <Image HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" Height="Auto" Margin="3" Source="UI/play.png"/>
                         </Button>
+                        <Button Name="renderVideoButton" ToolTip="Render to Video" Click="RenderVideoButton_Click" WindowChrome.IsHitTestVisibleInChrome="True" Width="{Binding ActualHeight, RelativeSource={RelativeSource Self}}" Style="{StaticResource TransparentButtonStyle}" Padding="0" Margin="0,0,0,0">
+                            <Path Data="M2,5 L14,5 L14,19 L2,19 Z M14,9 L22,6 L22,18 L14,15 Z" Fill="White" Stretch="Uniform" Width="20" Height="18"/>
+                        </Button>
                         <Button Name="settingsButton" PreviewMouseDown="SettingsButton_PreviewMouseDown" WindowChrome.IsHitTestVisibleInChrome="True" Width="{Binding ActualHeight, RelativeSource={RelativeSource Self}}" Style="{StaticResource TransparentButtonStyle}" Padding="0" Margin="0,0,0,0">
                             <Image HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" Height="Auto" Margin="8" Source="UI/settings.png"/>
                         </Button>

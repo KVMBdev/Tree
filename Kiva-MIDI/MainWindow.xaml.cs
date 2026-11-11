@@ -23,6 +23,8 @@ using SharpDX.DXGI;
 using Microsoft.Win32;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using DiscordRPC;
 using MessageBox = KivaShared.MessageBox;
 using KivaShared;
@@ -525,6 +527,176 @@ namespace Kiva
         }
         public FPS FPS { get; set; }
         public GlobalTime Time { get; set; }
+        public string CurrentMidiPath => loadedFle == null ? null : loadedFle.filepath;
+
+        private void RenderVideoButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new RenderToVideoWindow(this, CurrentMidiPath) { Owner = this };
+            window.ShowDialog();
+        }
+
+        public async Task RenderVideoAsync(string midiPath, string ffmpegPath, string audioPath, string outputPath, Action<int, int> progress)
+        {
+            if (!File.Exists(midiPath)) throw new FileNotFoundException("The selected MIDI file was not found.", midiPath);
+            if (!File.Exists(ffmpegPath)) throw new FileNotFoundException("The selected ffmpeg.exe was not found.", ffmpegPath);
+            if (!File.Exists(audioPath)) throw new FileNotFoundException("The selected audio file was not found.", audioPath);
+
+            string fullMidiPath = System.IO.Path.GetFullPath(midiPath);
+            if (loadedFle == null || !string.Equals(System.IO.Path.GetFullPath(loadedFle.filepath), fullMidiPath, StringComparison.OrdinalIgnoreCase))
+                LoadMidi(fullMidiPath);
+            if (loadedFle == null || !string.Equals(System.IO.Path.GetFullPath(loadedFle.filepath), fullMidiPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The MIDI file could not be loaded.");
+
+            const int frameRate = 30;
+            double midiDuration = Math.Max(0.1, loadedFle.MidiLength);
+            double audioDuration = ProbeAudioDuration(ffmpegPath, audioPath);
+            double outputDuration = Math.Max(midiDuration + 2.0, audioDuration);
+            if (outputDuration > 21600)
+                throw new InvalidOperationException("The selected MIDI or audio is longer than six hours.");
+
+            int totalFrames = Math.Max(1, (int)Math.Ceiling(outputDuration * frameRate));
+            var targetDescription = d3d.RenderTarget.Description;
+            int width = targetDescription.Width;
+            int height = targetDescription.Height;
+            string fullOutputPath = System.IO.Path.GetFullPath(outputPath);
+            string outputDirectory = System.IO.Path.GetDirectoryName(fullOutputPath);
+            if (!Directory.Exists(outputDirectory))
+                Directory.CreateDirectory(outputDirectory);
+
+            double previousTime = Time.GetTime();
+            bool wasPlaying = !Time.Paused;
+            bool previousSingleThreaded = d3d.SingleThreadedRender;
+            try
+            {
+                Time.Pause();
+                d3d.SingleThreadedRender = true;
+                dx11img.Render();
+
+                await Task.Run(async () =>
+                {
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = ffmpegPath,
+                        Arguments = "-hide_banner -loglevel error -y -f rawvideo -pixel_format bgra -video_size " +
+                            width + "x" + height + " -framerate " + frameRate + " -i pipe:0 -i " +
+                            QuoteProcessArgument(audioPath) +
+                            " -map 0:v:0 -map 1:a:0 -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac -b:a 192k -t " +
+                            outputDuration.ToString(CultureInfo.InvariantCulture) + " -shortest -movflags +faststart " +
+                            QuoteProcessArgument(fullOutputPath),
+                        UseShellExecute = false,
+                        RedirectStandardInput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    };
+
+                    using (var process = Process.Start(startInfo))
+                    {
+                        if (process == null)
+                            throw new InvalidOperationException("FFmpeg could not be started.");
+                        Task<string> errorTask = process.StandardError.ReadToEndAsync();
+                        try
+                        {
+                            for (int frame = 0; frame < totalFrames; frame++)
+                            {
+                                byte[] pixels = null;
+                                double frameTime = Math.Min(frame / (double)frameRate, midiDuration);
+                                await Dispatcher.InvokeAsync(new Action(() =>
+                                {
+                                    Time.Navigate(frameTime);
+                                    dx11img.Render();
+                                    int actualWidth, actualHeight;
+                                    pixels = d3d.ToRawFrame(out actualWidth, out actualHeight);
+                                    CompositeVideoFrame(pixels);
+                                    if (actualWidth != width || actualHeight != height)
+                                        throw new InvalidOperationException("The visualization size changed during video rendering.");
+                                })).Task;
+
+                                await process.StandardInput.BaseStream.WriteAsync(pixels, 0, pixels.Length);
+                                if (frame % 3 == 0 || frame + 1 == totalFrames)
+                                {
+                                    int current = frame + 1;
+                                    await Dispatcher.InvokeAsync(new Action(() => progress?.Invoke(current, totalFrames))).Task;
+                                }
+                            }
+                            process.StandardInput.Close();
+                            await Task.Run(() => process.WaitForExit());
+                            string errorText = await errorTask;
+                            if (process.ExitCode != 0)
+                                throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText) ? "FFmpeg exited with code " + process.ExitCode + "." : errorText.Trim());
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                process.StandardInput.Close();
+                                if (!process.HasExited) process.Kill();
+                            }
+                            catch { }
+                            throw;
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                d3d.SingleThreadedRender = previousSingleThreaded;
+                Time.Navigate(previousTime);
+                if (wasPlaying)
+                    Time.Play();
+            }
+        }
+
+        private static string QuoteProcessArgument(string value)
+        {
+            return new StringBuilder().Append((char)34).Append(value).Append((char)34).ToString();
+        }
+
+        private void CompositeVideoFrame(byte[] pixels)
+        {
+            Color background = settings.General.BackgroundColor;
+            int backgroundBlue = background.B * background.A / 255;
+            int backgroundGreen = background.G * background.A / 255;
+            int backgroundRed = background.R * background.A / 255;
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                int inverseAlpha = 255 - pixels[i + 3];
+                pixels[i] = (byte)Math.Min(255, pixels[i] + backgroundBlue * inverseAlpha / 255);
+                pixels[i + 1] = (byte)Math.Min(255, pixels[i + 1] + backgroundGreen * inverseAlpha / 255);
+                pixels[i + 2] = (byte)Math.Min(255, pixels[i + 2] + backgroundRed * inverseAlpha / 255);
+                pixels[i + 3] = 255;
+            }
+        }
+
+        private static double ProbeAudioDuration(string ffmpegPath, string audioPath)
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    Arguments = "-hide_banner -i " + QuoteProcessArgument(audioPath),
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process == null) return 0;
+                    string output = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    var match = Regex.Match(output, @"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)");
+                    if (!match.Success) return 0;
+                    double hours = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+                    double minutes = double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+                    double seconds = double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+                    return hours * 3600 + minutes * 60 + seconds;
+                }
+            }
+            catch
+            {
+                return 0;
+            }
+        }
 
         public void LoadMidi(string filename)
         {

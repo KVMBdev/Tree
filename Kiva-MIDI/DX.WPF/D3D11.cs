@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
 using SharpDX.DXGI;
@@ -47,6 +48,8 @@ namespace Kiva
             Set(ref device, null);
             Set(ref renderTarget, null);
             Set(ref renderTargetView, null);
+            Set(ref renderTargetCopy, null);
+            Set(ref frameReadback, null);
             //Set(ref depthStencil, null);
             //Set(ref depthStencilView, null);
         }
@@ -60,6 +63,7 @@ namespace Kiva
         protected Texture2D renderTarget;
         protected RenderTargetView renderTargetView;
         protected Texture2D renderTargetCopy;
+        protected Texture2D frameReadback;
         //protected Texture2D depthStencil;
         //protected DepthStencilView depthStencilView;
 
@@ -106,6 +110,13 @@ namespace Kiva
             Set(ref renderTargetView, new RenderTargetView(this.device, this.renderTarget));
             Set(ref renderTargetCopy, new Texture2D(this.device, desc));
 
+            var readbackDesc = desc;
+            readbackDesc.BindFlags = BindFlags.None;
+            readbackDesc.Usage = ResourceUsage.Staging;
+            readbackDesc.CpuAccessFlags = CpuAccessFlags.Read;
+            readbackDesc.OptionFlags = ResourceOptionFlags.None;
+            Set(ref frameReadback, new Texture2D(this.device, readbackDesc));
+
             //Set(ref depthStencil, DXUtils.CreateTexture2D(this.device, w, h, BindFlags.DepthStencil, Format.D24_UNorm_S8_UInt));
             //Set(ref depthStencilView, new DepthStencilView(this.device, depthStencil));
             //device.ImmediateContext.OutputMerger.SetRenderTargets(depthStencilView, renderTargetView);
@@ -144,6 +155,28 @@ namespace Kiva
 
         public Texture2D RenderTarget { get { return Prepared(ref renderTargetCopy); } }
         public RenderTargetView RenderTargetView { get { return Prepared(ref renderTargetView); } }
+        public byte[] ToRawFrame(out int width, out int height)
+        {
+            var source = Prepared(ref renderTargetCopy);
+            var desc = source.Description;
+            width = desc.Width;
+            height = desc.Height;
+            var context = Device.ImmediateContext;
+            context.CopyResource(source, Prepared(ref frameReadback));
+            var mapped = context.MapSubresource(frameReadback, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
+            try
+            {
+                int rowBytes = width * 4;
+                var pixels = new byte[rowBytes * height];
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(IntPtr.Add(mapped.DataPointer, y * mapped.RowPitch), pixels, y * rowBytes, rowBytes);
+                return pixels;
+            }
+            finally
+            {
+                context.UnmapSubresource(frameReadback, 0);
+            }
+        }
 
         //public Texture2D DepthStencil { get { return Prepared(ref depthStencil); } }
         //public DepthStencilView DepthStencilView { get { return Prepared(ref depthStencilView); } }
